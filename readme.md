@@ -14,26 +14,7 @@ MT1/MT2 topic division changes per semester, I'll update as class goes on
 
 !!! I've only started working on MT2, because 1. it's the most urgent and 2. It's fresh in my mind bc I've started helping people in OH on these topics
 
-# Midterm 1:
 
--Blank Notes:
+** UPDATE 10/25 **
 
--Solutions Notes:
-
--Date Last Updated:
-
-# Midterm 2:
-
--Blank Notes:
-
--Solutions Notes:
-
--Date Last Updated:
-
-# Final:
-
--Blank Notes:
-
--Solutions Notes:
-
--Date Last Updated:
+Moved all work into the "to-publish" folder. Of 10/25, I added some NGFS questions. WIll need to review later
