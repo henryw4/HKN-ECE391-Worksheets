@@ -1,0 +1,146 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage[makeroom]{cancel}
+\usepackage[letterpaper,portrait,margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{multicol}
+\usepackage{xcolor}
+\usepackage{listings}
+\title{ECE391 Review}
+\author{Author: Members of HKN}
+\date{}
+\definecolor{mGreen}{rgb}{0,0.6,0}
+\definecolor{mGray}{rgb}{0.5,0.5,0.5}
+\definecolor{mPurple}{rgb}{0.58,0,0.82}
+\definecolor{backgroundColour}{rgb}{1,1,1}
+\newcommand{\wideunderscore}{\underline{\hphantom{n}}}
+\lstdefinestyle{CStyle}{backgroundcolor=\color{backgroundColour},
+ commentstyle=\color{mGreen},keywordstyle=\color{magenta},
+ numberstyle=\tiny\color{mGray},stringstyle=\color{mPurple},
+ basicstyle=\footnotesize\ttfamily,breakatwhitespace=false,breaklines=true,
+ captionpos=b,keepspaces=true,numbers=left,numbersep=5pt,
+ showspaces=false,showstringspaces=false,showtabs=false,tabsize=2,language=C}
+\setlist[enumerate,1]{label=(\alph*),itemsep=12pt}
+\setlist[enumerate,2]{label=(\roman*),itemsep=8pt}
+\newenvironment{solution}{\par\medskip\noindent\textbf{Solution}\par\smallskip}{\par}
+\pagenumbering{arabic}
+% Sources: ../sources/markdowns/{filesystem,d7,vm,processes,preempt,d11,d12}.md.
+% Style references: ../sources/markdowns/examples.md and ../midterm2/worksheet.tex.
+% One main question per page keeps prompts and solutions together for review.
+\begin{document}
+\maketitle
+\noindent Questions and solutions created for the file system (NGFS) on October 25, 2026. This file is to just track progress on creating material for HKN's ECE391 worksheets. Since this is the first ever iteration for this class, I'm not going to adhere to a general structure for midterms and etc. That changes per semester anyways, so I'll just have the general topics covered starting in MP3 CP1 and onwards. These questions will need review!
+
+\section{File System: NGFS}
+\begin{enumerate}
+\item \textbf{Building the NGFS picture}: An NGFS device reserves its first
+$F=3$ blocks for the FAT.
+\begin{enumerate}
+\item Sketch the FAT and data regions. Where does the root directory begin?
+Give both its device block address and its data block address. Does NGFS support
+subdirectories?
+\item What do \texttt{name}, \texttt{size}, and \texttt{start\_blk} describe in a
+directory entry? What is special about the first entry, named \texttt{.}?
+\item Explain the meanings of \texttt{FAT[i] = NGFS\_BLOCK\_FREE},
+\texttt{FAT[i] = NGFS\_BLOCK\_END}, and \texttt{FAT[i] = 7}.
+\end{enumerate}
+\begin{solution}
+\begin{enumerate}
+\item Device blocks 0--2 contain the FAT. The data region begins at device
+block 3, which is data block 0 and the start of the root directory.
+In general, device block address $=F+$ data block address. NGFS is flat:
+the root is its only directory.
+\item The fields give a file's name, exact byte length, and first data block
+address. The root directory is itself a file containing an array of entries.
+Its first entry describes itself: name \texttt{.}, starting data block 0,
+and size equal to the byte length of its entries, including \texttt{.}.
+The directory can grow into a multi-block FAT chain.
+\item Entry $i$ describes data block $i$. FREE (0) means available; END
+($2^{32}-1$) means the last block in a file; 7 means the next file block is
+data block 7. The links are in the FAT, not embedded in file contents.
+\end{enumerate}
+\end{solution}
+
+\newpage
+\item \textbf{Following a file}: A directory entry for \texttt{notes.txt} has
+\texttt{size = 1300} and \texttt{start\_blk = 2}. The relevant FAT entries are:
+\begin{lstlisting}[style=CStyle]
+FAT[2] = 7;
+FAT[7] = 4;
+FAT[4] = NGFS_BLOCK_END;
+\end{lstlisting}
+The FAT occupies three device blocks. The file position is initially 500.
+\begin{enumerate}
+\item A caller requests 600 bytes. Identify each data block used, its device
+block address, and the number of bytes copied from it. What is the new position?
+\item Instead, the position is 1200 and the caller requests 200 bytes.
+How many bytes should be returned? Why is reaching END alone insufficient
+to determine the number of valid bytes in the last block?
+\item Complete the expressions for an arbitrary file position \texttt{pos}.
+How do you use the first value to locate the correct block in a FAT chain?
+\begin{lstlisting}[style=CStyle]
+unsigned long file_block_index = __________;
+unsigned long offset_in_block = __________;
+\end{lstlisting}
+\end{enumerate}
+\begin{solution}
+\begin{enumerate}
+\item Read 12 bytes at offsets 500--511 of data block 2 (device block 5),
+then 512 bytes from data block 7 (device block 10), then 76 bytes from
+data block 4 (device block 7). The new position is $500+600=1100$.
+File order follows the chain, not ascending device addresses.
+\item Return $1300-1200=100$ bytes, all from the final block. Its offset is
+$1200\bmod512=176$. END identifies the final allocated block, but the
+file size identifies the valid portion of it. The file uses three blocks
+(1536 bytes of data-block capacity), only 1300 of which are file contents.
+\item Use \texttt{pos / 512} and \texttt{pos \% 512}. Start at
+\texttt{start\_blk} and follow the FAT link \texttt{file\_block\_index}
+times. A file-block index is an ordinal within the file, not a data block address.
+\end{enumerate}
+\end{solution}
+
+\newpage
+\item \textbf{Growing and deleting}: A 500-byte file starts at data block 5,
+and \texttt{FAT[5] = NGFS\_BLOCK\_END}. Data block 6 is free. Assume there
+is enough directory space and all operations succeed.
+\begin{enumerate}
+\item Append 40 bytes, allocating block 6 if needed. How many bytes go into
+each block? Give the new FAT entries and directory-entry size.
+\item The following deletion loop is incorrect. Identify the bug and rewrite
+the loop. Assume a valid, nonempty chain and ignore synchronization here.
+\begin{lstlisting}[style=CStyle]
+while (b != NGFS_BLOCK_END) {
+    FAT[b] = NGFS_BLOCK_FREE;
+    b = FAT[b];
+}
+\end{lstlisting}
+\item Besides freeing the chain, how does the lecture's NGFS deletion method
+update the root directory? Must it erase the old file bytes? If a FAT or
+directory block was modified through the cache, how should it be released?
+\end{enumerate}
+\begin{solution}
+\begin{enumerate}
+\item The original block has 12 spare bytes: write 12 there and 28 into
+block 6. Set \texttt{FAT[5] = 6}, \texttt{FAT[6] = NGFS\_BLOCK\_END},
+and the file size to 540 bytes. The starting block remains 5.
+\item The code destroys the next-block link before reading it, so it follows
+FREE (0) instead of the chain. Save the link first:
+\begin{lstlisting}[style=CStyle]
+while (b != NGFS_BLOCK_END) {
+    uint32_t next = FAT[b];
+    FAT[b] = NGFS_BLOCK_FREE;
+    b = next;
+}
+\end{lstlisting}
+\item Replace the removed entry with the last entry (unless already last),
+and shrink the directory's size by one entry. Old file bytes need not be
+erased for logical deletion. Release each successfully fetched cache block
+exactly once, marking modified blocks dirty so updates can reach the device.
+\end{enumerate}
+\end{solution}
+\end{enumerate}
+\end{document}
